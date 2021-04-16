@@ -1,0 +1,24 @@
+<library>
+  <repositories>
+    <repository>
+      <path>${HOME}/gitclones/modm/repo.lb</path>
+    </repository>
+  </repositories>
+
+  <extends>modm:nucleo-f767zi</extends>
+  <options>
+    <option name="modm:build:build.path">build/blink</option>
+
+    <!-- enable rtti because lely reasons -->
+    <option name="modm:stdc++:rtti">True</option>
+    <!-- enable exceptions because lely reasons -->
+    <option name="modm:stdc++:exceptions">True</option>
+
+
+  </options>
+  <modules>
+    <module>modm:build:scons</module>
+    <module>modm:lely-core</module>
+    <module>modm:platform:heap</module>
+  </modules>
+</library>
