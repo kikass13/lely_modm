@@ -4,3 +4,5 @@ modm/
 *.log
 SConstruct
 build/
+.vscode
+*.dblite
