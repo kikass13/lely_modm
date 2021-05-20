@@ -8,30 +8,46 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 // ----------------------------------------------------------------------------
-
 #include <modm/board.hpp>
 using namespace Board;
+
+/// kikass13:
+#define LELY_NO_CO_OBJ_NAME 0
+#define LELY_NO_CO_OBJ_DEFAULT 0
+#define LELY_NO_CO_OBJ_UPLOAD 0
+#define LELY_NO_CO_OBJ_LIMITS 0
+/// include generated (convertEds2Hpp) slave definition
+/// instead of loading the .eds file dynamically at runtime
+#include "eds/eds-master.hpp"
+
+/// kikass13:
+/// include generated (convertEds2Hpp) slave definition
+/// instead of loading the .eds file dynamically at runtime
+#include "eds/eds-slave.hpp"
+
 
 #include <lely/coapp/master.hpp>
 #include <lely/io2/user/can.hpp>
 #include <lely/io2/user/timer.hpp>
 #include <lely/ev/loop.hpp>
 #include <lely/io2/sys/io.hpp>
-//#include <lely/io2/sys/clock.hpp>
+#include <lely/io2/sys/clock.hpp>
+
+#include "timeWrapper.hpp"
 
 /// kikass13:
 /// include driver for slave which is used by the master to communicate with the slave
 #include "SlaveDriver.hpp"
 /// ... and also include generated (convertEds2Hpp) slave definition
 /// instead of loading the .eds file dynamically at runtime
-#include "eds/eds-master.hpp"
+//#include "eds/eds-master.hpp"
 
 /// kikass13:
-/// include the slave class, which contains teh behavior of the slave itself
+/// include the slave class, which contains the behavior of the slave itself
 #include "Slave.hpp"
 /// ... and also include generated (convertEds2Hpp) slave definition
 /// instead of loading the .eds file dynamically at runtime
-#include "eds/eds-slave.hpp"
+//#include "eds/eds-slave.hpp"
 
 
 
@@ -58,32 +74,52 @@ int on_write(const can_msg* msg, int timeout, void* arg) {
   return 0;
 }
 
-
+// Allocate giant array inside a NOLOAD heap section
+// Play around with the array size and see effect it has on HeapTable!
+const uint8_t *heap_begin{nullptr};
+const uint8_t *heap_end{nullptr};
+extern "C" void __modm_initialize_memory()
+{
+    bool success = HeapTable::find_largest(&heap_begin, &heap_end, modm::MemoryDefault);
+	// MODM_LOG_DEBUG << "### heap_begin:" << (unsigned int) heap_begin << modm::endl;
+	// MODM_LOG_DEBUG << "### heap_end:" << (unsigned int) heap_end << modm::endl;
+	// MODM_LOG_DEBUG << "### Usable HeapSize: " << ( (unsigned long) *heap_end) - (unsigned long) *heap_begin) << modm::endl;
+    modm_assert(success, "heap.init", "No default memory section found!");
+}
+const uint8_t *heap_top{heap_begin};
+extern "C" void* _sbrk_r(struct _reent *,  ptrdiff_t size)
+{
+    const uint8_t *const heap = heap_top;
+    heap_top += size;
+    modm_assert(heap_top < heap_end, "heap.sbrk", "Heap overflowed!");
+    return (void*) heap;
+}
 
 int main()
 {
 	Board::initialize();
 	Leds::setOutput();
 
-	uint32_t counter(0);
-
 	/// #################
 	/// ###### PRE
 	/// kikass13:
-	/// Initialize gurads, context and loop for flow control and event handling
+	/// Initialize guards, context and loop for flow control and event handling
 	/// The event loop and executor can be utilized multiple times 
 
-	// Initialize the I/O library. This is required on Windows, but a no-op on
-	// Linux (for now).
-	lely::io::IoGuard io_guard;
+	// Initialize the I/O library. This is required on Windows, but a no-op on Linux (for now).
+	// lely::io::IoGuard io_guard;
 	// Create an I/O context to synchronize I/O services during shutdown.
+
+	// MODM_LOG_INFO << sizeof(io_ctx) << modm::endl;
 	lely::io::Context ctx;
+
 	// Create a non-polling event loop.
 	lely::ev::Loop loop;
 	auto exec = loop.get_executor();
 
 	/// #################
 	/// ###### TIMERS
+	MODM_LOG_INFO << "TIMERS" << modm::endl;
 
 	// Obtain the current time from the monotonic clock. This can be replaced by
 	// any other type of clock.
@@ -95,9 +131,6 @@ int main()
 	lely::io::UserTimer stimer(ctx, exec, &on_next, nullptr);
 	// // Create a user-defined channel for exclusive use by the master.
 	lely::io::UserTimer mtimer(ctx, exec, &on_next, nullptr);
-	// // Initialize the internal clock of the timer.
-	// stimer.get_clock().settime(now);
-	// mtimer.get_clock().settime(now);
 
 	// /// #################
 	// /// ###### CHANNELS
@@ -107,6 +140,7 @@ int main()
 	// /// of the other channel (master -> slave and vice versa)
 	// /// this can of course be utilized to define or use our own can send / receive buffering handling on top
 	// /// #################
+	MODM_LOG_INFO << "CHANNELS" << modm::endl;
 
 	// // The on_write() functions for the CAN channels of the master and slave need
 	// // to refer to the other channel. This creates a chicken-and-egg problem. To
@@ -139,37 +173,45 @@ int main()
 	// // means every user-defined callback for a CANopen event will be posted as a
 	// // task on the event loop, instead of being invoked during the event
 	// // processing by the stack.
+	MODM_LOG_INFO << "MASTER" << modm::endl;
+
 	/// kikass13:
   	/// create Slave object using static generated eds device destription object 
-  	lely::canopen::AsyncMaster master(mtimer, mchan, &MyMaster, 1);
+  	co_dev_t* masterDeviceDescription = MyMaster_init();
+  	lely::canopen::AsyncMaster master(mtimer, mchan, masterDeviceDescription, 1);
+
+	MODM_LOG_INFO << " ... DRIVER" << modm::endl;
 
 	// // Master:Create a driver for the slave with node-ID 2.
 	MyDriver driver(exec, master, 2);
 
-	
+	MODM_LOG_INFO << "SLAVE" << modm::endl;
 	// Create a CANopen slave with node-ID 2.
 	/// create Slave object using static generated eds device destription object 
-  	MySlave slave(stimer, schan, &MySlave1, 2);
+	co_dev_t* slaveDeviceDescription = MySlave1_init();
+  	MySlave slave(stimer, schan, slaveDeviceDescription, 2);
+	
 	// /// #################
 	// /// ###### START
+	MODM_LOG_INFO << "START" << modm::endl;
 
 	// // Start the NMT services of the slave and master by pretending to receive a 'reset node' command
-	// slave.Reset();
-	// master.Reset();
-
-  	// // Busy loop without polling.
+	slave.Reset();
+	master.Reset();
+	
+	MODM_LOG_INFO << "Lets goooo :)" << modm::endl;
+  	// Busy loop without polling.
 	while (true)
 	{
-		// 	// Update the internal clocks of the timers.
-		// 	auto now = io::clock_monotonic.gettime();
-		// 	stimer.get_clock().settime(now);
-		// 	mtimer.get_clock().settime(now);
+		// Update the internal clocks of the timers.
+		
+		const auto now = modm::Clock::now();
+		auto lelyNow = lely::io::Clock::time_point(now.time_since_epoch());
+		stimer.get_clock().settime(lelyNow);
+		mtimer.get_clock().settime(lelyNow);
 
 		// 	// Execute all pending tasks without waiting.
 		loop.poll();
-
-		MODM_LOG_INFO << "loop: " << counter++ << modm::endl;
 	}
-
 	return 0;
 }

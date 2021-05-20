@@ -12,6 +12,15 @@ class MyDriver : public lely::canopen::FiberDriver {
   using FiberDriver::FiberDriver;
 
  private:
+
+ void OnState(lely::canopen::NmtState st) noexcept override {
+
+ }
+ void OnCanState(lely::io::CanState new_state, lely::io::CanState old_state) noexcept override {
+                    
+ }
+
+
   // This function gets called when the boot-up process of the slave completes.
   // The 'st' parameter contains the last known NMT state of the slave
   // (typically pre-operational), 'es' the error code (0 on success), and 'what'

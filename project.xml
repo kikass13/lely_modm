@@ -14,11 +14,14 @@
     <!-- enable exceptions because lely reasons -->
     <option name="modm:stdc++:exceptions">True</option>
 
+    <option name="modm:platform:cortex-m:main_stack_size "> 32000 </option>
 
   </options>
   <modules>
     <module>modm:build:scons</module>
     <module>modm:lely-core</module>
-    <module>modm:platform:heap</module>
+    <module>modm:architecture:memory</module>
+
+    <!--<module>modm:platform:heap</module> -->
   </modules>
 </library>
